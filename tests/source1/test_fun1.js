@@ -7,3 +7,5 @@ function factorial(asd) {
 }
 
 display(factorial(5));
+
+// 120.000000

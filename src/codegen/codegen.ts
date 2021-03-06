@@ -174,14 +174,16 @@ function evalConditionalStatement(node: es.ConditionalExpression, env: Environme
   return phi
 }
 
-function evalIfStatement(node: es.IfStatement, env: Environment, lObj: LLVMObjs) {
+function evalIfStatement(node: es.IfStatement | es.ConditionalExpression, env: Environment, lObj: LLVMObjs) {
   const fun = (lObj.builder.getInsertBlock() as l.BasicBlock).parent as l.Function
   const thenbb = l.BasicBlock.create(lObj.context, 'then', fun)
   const elsebb = l.BasicBlock.create(lObj.context, 'else')
   const afterbb = l.BasicBlock.create(lObj.context, 'after_if')
   let thenterminated = false;
   let elseterminated = false;
-  let nestedcond = node.alternate?.type === "IfStatement"
+  let isCond = node.type === "ConditionalExpression"
+  let isNested = node.alternate?.type === "IfStatement" ||
+    node.alternate?.type === "ConditionalExpression"
 
   const test = evaluate(node.test, env, lObj)
   lObj.builder.createCondBr(test, thenbb, elsebb)
@@ -189,7 +191,8 @@ function evalIfStatement(node: es.IfStatement, env: Environment, lObj: LLVMObjs)
   fun.addBasicBlock(thenbb)
   lObj.builder.setInsertionPoint(thenbb)
   const conseq = evaluate(node.consequent, env, lObj)
-  if (thenbb.getTerminator()) // this is in case of return statements
+  if (thenbb.getTerminator())
+    // this is in case of return statements
     thenterminated = true
   else
     lObj.builder.createBr(afterbb)
@@ -201,15 +204,25 @@ function evalIfStatement(node: es.IfStatement, env: Environment, lObj: LLVMObjs)
     elseterminated = true
   else
     lObj.builder.createBr(afterbb)
-  if (nestedcond)
-    lObj.builder.createBr(afterbb)
 
   if (thenterminated && elseterminated)
-    return
+    return elsebb.getTerminator()
+  
+  let bbs = fun.getBasicBlocks()
+  if (isNested) {
+    lObj.builder.createBr(afterbb)
+  }
   fun.addBasicBlock(afterbb)
   lObj.builder.setInsertionPoint(afterbb)
 
-  return afterbb
+  let phi = lObj.builder.createPhi(l.Type.getDoubleTy(lObj.context), 2, "iftmp")
+  phi.addIncoming(conseq, thenbb)
+  if (isNested) {
+    phi.addIncoming(altern, bbs[bbs.length - 1])
+  } else {
+    phi.addIncoming(altern, elsebb)
+  }
+  return phi
 }
 
 function evalBinaryStatement(
@@ -348,7 +361,7 @@ function evaluate(node: es.Node, env: Environment, lObj: LLVMObjs): l.Value {
     BinaryExpression: evalBinaryStatement,
     BlockStatement: evalBlockStatement,
     CallExpression: evalCallExpression,
-    ConditionalExpression: evalConditionalStatement,
+    ConditionalExpression: evalIfStatement,
     ExpressionStatement: evalExpressionStatement,
     FunctionDeclaration: evalFunctionDeclaration,
     Identifier: evalIdentifierExpression,
@@ -372,6 +385,7 @@ function eval_toplevel(node: es.Node) {
   const builder = new l.IRBuilder(context)
   const env = new Environment(new Map<string, TypeRecord>(), new Map<any, l.Value>())
   evaluate(node, env, { context, module, builder })
+  l.verifyModule(module)
   return module
 }
 

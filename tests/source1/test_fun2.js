@@ -7,3 +7,5 @@ function fast_power(b, e) {
 }
 
 display(fast_power(2, 10));
+
+// 1024.000000

@@ -38,7 +38,7 @@ function compile(options: any, code: string) {
   let estree: es.Program | undefined = slang_parse(code, context)
 
   if (!estree) {
-    return Promise.reject(new CompileError('js-slang cannot parse the program'))
+    throw new CompileError('js-slang cannot parse the program')
   }
 
   let es_str: string = JSON.stringify(estree, null, 4)
@@ -52,7 +52,7 @@ function compile(options: any, code: string) {
     console.log(module.print())
   }
   // compile should return LLVM IR
-  return Promise.resolve(module.print())
 }
 
 main()
+
