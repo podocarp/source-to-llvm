@@ -1,6 +1,6 @@
 import * as es from 'estree'
 import * as l from 'llvm-node'
-import { Environment, Type, TypeRecord } from '../context/environment'
+import { Environment, Location, Type, TypeRecord } from '../context/environment'
 import { isBool, isNumber, isString } from '../util/util'
 import { LLVMObjs } from '../types/types'
 import { display } from './primitives'
@@ -75,7 +75,7 @@ function evalCallExpression(node: es.CallExpression, env: Environment, lObj: LLV
     else if (!fun) throw new Error('Undefined function ' + callee)
     return lObj.builder.createCall(fun.type.elementType as l.FunctionType, fun, args)
   } else {
-    return built(args, env, lObj) // a bit of that lazy evaluation
+    return built(args, env, lObj)
   }
 }
 
@@ -93,8 +93,8 @@ function evalFunctionDeclaration(node: es.FunctionDeclaration, env: Environment,
   }
   const oldBB = lObj.builder.getInsertBlock() as l.BasicBlock
   let name = node.id?.name;
-  const funenv = new Environment(new Map<string, TypeRecord>())
-  env.setChild(funenv)
+  const funenv = new Environment(new Map<string, TypeRecord>(), Location.FUNCTION)
+  funenv.setParent(env)
   // TODO: type inference
   const paramtypes = node.params.map(x => l.Type.getDoubleTy(lObj.context))
   const funtype = l.FunctionType.get(l.Type.getDoubleTy(lObj.context), paramtypes, false)
@@ -125,7 +125,9 @@ function evalReturnStatement(node: es.ReturnStatement, env: Environment, lObj: L
 
 function evalBlockStatement(node: es.BlockStatement, env: Environment, lObj: LLVMObjs) {
   // TODO: Check for return statements
-  let v = node.body.map(x => evaluate(x, env, lObj))
+  let blenv = new Environment(new Map<string, TypeRecord>(), Location.BLOCK)
+  blenv.setParent(env)
+  let v = node.body.map(x => evaluate(x, blenv, lObj))
   return v[node.body.length - 1]
 }
 
@@ -348,7 +350,10 @@ function evalVariableDeclarationExpression(
     ? Type.STRING
     : Type.UNKNOWN
 
-  const allocInst = functionHoist(value, lObj)
+  const allocInst =
+    env.loc === Location.FUNCTION
+    ? functionHoist(value, lObj)
+    : lObj.builder.createAlloca(value.type, undefined, name)
   lObj.builder.createStore(value, allocInst, false)
   env.push(name, { value: allocInst, type })
   return allocInst
@@ -358,6 +363,7 @@ function evaluate(node: es.Node, env: Environment, lObj: LLVMObjs): l.Value {
   // This is actually not type safe.
   // There are two functions that return nothing: IfExpression, and BlockExpression
   const jumptable = {
+    ArrowFunctionExpression: evalFunctionDeclaration,
     BinaryExpression: evalBinaryStatement,
     BlockStatement: evalBlockStatement,
     CallExpression: evalCallExpression,
@@ -383,7 +389,7 @@ function eval_toplevel(node: es.Node) {
   const context = new l.LLVMContext()
   const module = new l.Module('module', context)
   const builder = new l.IRBuilder(context)
-  const env = new Environment(new Map<string, TypeRecord>(), new Map<any, l.Value>())
+  const env = new Environment(new Map<string, TypeRecord>(), Location.FUNCTION, new Map<any, l.Value>())
   evaluate(node, env, { context, module, builder })
   l.verifyModule(module)
   return module

@@ -9,6 +9,11 @@ enum Type {
   UNKNOWN
 }
 
+enum Location {
+  BLOCK,
+  FUNCTION
+}
+
 interface TypeRecord {
   value: Value
   type?: Type
@@ -19,10 +24,11 @@ interface TypeRecord {
 class Environment {
   private names: Map<string, TypeRecord>
   private globals?: Map<any, Value>
-  private child?: Environment
+  public loc: Location
   private parent?: Environment
-  constructor(theNames: Map<string, TypeRecord>, theGlobals?: Map<any, Value>) {
+  constructor(theNames: Map<string, TypeRecord>, theLoc: Location, theGlobals?: Map<any, Value>) {
     this.names = theNames
+    this.loc = theLoc
     this.globals = theGlobals ? theGlobals : undefined
   }
 
@@ -55,18 +61,11 @@ class Environment {
     return value
   }
 
-  // Sets the child of this to point to the argument.
-  // Also sets the parent of the argument to this.
-  setChild(theChild: Environment): void {
-    this.child = theChild
-    theChild.setParent(this)
-  }
-
-  // Sets the parent of this to point to the argument.
-  // Does not set the child of the argument.
+  // Sets the parent of this to be to the argument.
+  // An environment can be the parent of multiple others.
   setParent(theParent: Environment): void {
     this.parent = theParent
   }
 }
 
-export { Environment, Type, TypeRecord }
+export { Environment, Location, Type, TypeRecord }
